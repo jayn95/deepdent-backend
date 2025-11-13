@@ -1,20 +1,23 @@
 from flask import Flask, request, jsonify
 from gradio_client import Client, handle_file
 import tempfile, base64, os, threading
-from flask_cors import CORS  # ---
+from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # ---
+CORS(app)  # ✅ Allow mobile apps to call this API
 
+# Hugging Face Spaces
 GINGIVITIS_SPACE = "jayn95/deepdent_gingivitis"
 PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 
 
 def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout_seconds=120):
+    """Calls Hugging Face Space in a background thread with timeout."""
     client = Client(space_name)
     result_container = {}
 
     def run_predict():
+        # some models expect confidence params (e.g., 0.4, 0.5)
         result_container["data"] = client.predict(
             handle_file(image_path),
             0.4,
@@ -31,17 +34,25 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
 
     result = result_container.get("data", [])
 
-    # --- handle analysis text
-    analysis_text = None  # ---
-    if isinstance(result, (list, tuple)):  # ---
-        if isinstance(result[-1], str) and len(result) > 1:  # ---
-            analysis_text = result[-1]  # ---
-            flat_result = result[:-1]  # ---
-        else:  # ---
-            flat_result = result  # ---
-    else:  # ---
-        flat_result = [result]  # ---
+    # --- NEW HYBRID HANDLER ---
+    analysis_text = None
+    flat_result = []
 
+    # If it's a list or tuple, inspect contents
+    if isinstance(result, (list, tuple)):
+        # Detect if last item is text
+        if isinstance(result[-1], str) and len(result) > 1:
+            analysis_text = result[-1]
+            flat_result = result[:-1]
+        else:
+            flat_result = result
+    elif isinstance(result, str):
+        # Only text result
+        analysis_text = result
+    else:
+        flat_result = [result]
+
+    # Optionally flatten nested lists
     if flatten:
         flattened = []
         for r in flat_result:
@@ -51,6 +62,7 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
                 flattened.append(r)
         flat_result = flattened
 
+    # Generate default labels if not provided
     if labels is None:
         labels = []
         if space_name == PERIODONTITIS_SPACE:
@@ -61,18 +73,17 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
         else:
             labels = [f"output{i+1}" for i in range(len(flat_result))]
 
+    # Encode valid images
     encoded_results = {}
     for label, path in zip(labels, flat_result):
-        if os.path.exists(path):
+        if isinstance(path, str) and os.path.exists(path):
             with open(path, "rb") as f:
                 encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
-        else:
-            encoded_results[label] = None
 
-    return {  # ---
-        "images": encoded_results,  # ---
-        "analysis": analysis_text  # ---
-    }  # ---
+    return {
+        "images": encoded_results,
+        "analysis": analysis_text
+    }
 
 
 @app.route("/")
@@ -91,14 +102,14 @@ def predict_gingivitis():
             image.save(temp_file.name)
             temp_path = temp_file.name
 
-        result = call_huggingface(  # ---
-            GINGIVITIS_SPACE,  # ---
-            temp_path,  # ---
-            labels=["swelling", "redness", "bleeding"]  # ---
-        )  # ---
+        result = call_huggingface(
+            GINGIVITIS_SPACE,
+            temp_path,
+            labels=["swelling", "redness", "bleeding"]
+        )
 
         os.remove(temp_path)
-        return jsonify(result)  # ---
+        return jsonify(result)
 
     except TimeoutError as te:
         return jsonify({"error": str(te)}), 504
@@ -117,15 +128,15 @@ def predict_periodontitis():
             image.save(temp_file.name)
             temp_path = temp_file.name
 
-        result = call_huggingface(  # ---
-            PERIODONTITIS_SPACE,  # ---
-            temp_path,  # ---
-            labels=None,  # ---
-            flatten=True  # ---
-        )  # ---
+        result = call_huggingface(
+            PERIODONTITIS_SPACE,
+            temp_path,
+            labels=None,
+            flatten=True
+        )
 
         os.remove(temp_path)
-        return jsonify(result)  # ---
+        return jsonify(result)
 
     except TimeoutError as te:
         return jsonify({"error": str(te)}), 504
@@ -134,5 +145,5 @@ def predict_periodontitis():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))  # ---
-    app.run(host="0.0.0.0", port=port)  # ---
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
