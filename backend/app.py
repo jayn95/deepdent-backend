@@ -4,9 +4,8 @@ import tempfile, base64, os, threading
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # ✅ Allow mobile apps to call this API
+CORS(app)
 
-# Hugging Face Spaces
 GINGIVITIS_SPACE = "jayn95/deepdent_gingivitis"
 PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 
@@ -32,56 +31,50 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
 
     result = result_container.get("data", [])
 
-    analysis_text = None
+    # Flatten nested list if needed
     flat_result = []
-
-    if isinstance(result, (list, tuple)):
-        if isinstance(result[-1], str) and len(result) > 1:
-            analysis_text = result[-1]
-            flat_result = result[:-1]
-        else:
-            flat_result = result
-    elif isinstance(result, str):
-        analysis_text = result
-    else:
-        flat_result = [result]
-
     if flatten:
-        flattened = []
-        for r in flat_result:
+        for r in result:
             if isinstance(r, (list, tuple)):
-                flattened.extend(r)
+                flat_result.extend(r)
             else:
-                flattened.append(r)
-        flat_result = flattened
+                flat_result.append(r)
+    else:
+        flat_result = result
 
+    #--- separate text and image paths
+    analysis_text = ""  #---
+    image_paths = []    #---
+
+    for item in flat_result:  #---
+        if isinstance(item, str) and "Tooth" in item:  # analysis text
+            analysis_text = item.strip()               #---
+        elif isinstance(item, str):
+            image_paths.append(item)                   #---
+        else:
+            image_paths.append(str(item))              #---
+
+    # Auto-generate labels if None
     if labels is None:
         labels = []
         if space_name == PERIODONTITIS_SPACE:
-            num_teeth = len(flat_result) // 2
+            num_teeth = len(image_paths) // 2
             for i in range(num_teeth):
                 for m in ["cej", "abc"]:
                     labels.append(f"tooth{i+1}_{m}")
         else:
-            labels = [f"output{i+1}" for i in range(len(flat_result))]
+            labels = [f"output{i+1}" for i in range(len(image_paths))]
 
+    # Encode results as base64
     encoded_results = {}
-    for label, item in zip(labels, flat_result):
-        if isinstance(item, str):
-            # Case 1: it's a path
-            if os.path.exists(item):
-                with open(item, "rb") as f:
-                    encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
-            # Case 2: already Base64 or data URL
-            elif item.strip().startswith("UklG") or item.strip().startswith("/9j/"):
-                encoded_results[label] = item
+    for label, path in zip(labels, image_paths):
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
         else:
             encoded_results[label] = None
 
-    return {
-        "images": encoded_results,
-        "analysis": analysis_text
-    }
+    return encoded_results, analysis_text  #--- return analysis too
 
 
 @app.route("/")
@@ -100,14 +93,14 @@ def predict_gingivitis():
             image.save(temp_file.name)
             temp_path = temp_file.name
 
-        result = call_huggingface(
+        encoded_results, _ = call_huggingface(  #---
             GINGIVITIS_SPACE,
             temp_path,
             labels=["swelling", "redness", "bleeding"]
         )
 
         os.remove(temp_path)
-        return jsonify(result)
+        return jsonify({"images": encoded_results})
 
     except TimeoutError as te:
         return jsonify({"error": str(te)}), 504
@@ -126,7 +119,7 @@ def predict_periodontitis():
             image.save(temp_file.name)
             temp_path = temp_file.name
 
-        result = call_huggingface(
+        encoded_results, analysis = call_huggingface(  #---
             PERIODONTITIS_SPACE,
             temp_path,
             labels=None,
@@ -134,7 +127,10 @@ def predict_periodontitis():
         )
 
         os.remove(temp_path)
-        return jsonify(result)
+        return jsonify({        #---
+            "images": encoded_results,
+            "analysis": analysis
+        })                       #---
 
     except TimeoutError as te:
         return jsonify({"error": str(te)}), 504
