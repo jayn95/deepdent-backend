@@ -31,54 +31,61 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
 
     result = result_container.get("data", [])
 
-    #--- Normalize result to a list
-    if not isinstance(result, (list, tuple)):  #---
-        result = [result]  #---
+    analysis_text = None
+    flat_result = []
 
-    #--- Separate text vs image paths
-    analysis_texts = []  #---
-    image_paths = []  #---
+    if isinstance(result, (list, tuple)):
+        if isinstance(result[-1], str) and len(result) > 1:
+            analysis_text = result[-1]
+            flat_result = result[:-1]
+        else:
+            flat_result = result
+    elif isinstance(result, str):
+        analysis_text = result
+    else:
+        flat_result = [result]
 
-    for item in result:  #---
-        if isinstance(item, str) and "Tooth" in item:  # likely analysis summary
-            analysis_texts.append(item.strip())  #---
-        elif isinstance(item, str) and os.path.exists(item):  # actual image path
-            image_paths.append(item)  #---
-        else:  #---
-            try:  #---
-                if os.path.exists(str(item)):  #---
-                    image_paths.append(str(item))  #---
-            except:  #---
-                pass  #---
+    if flatten:
+        flattened = []
+        for r in flat_result:
+            if isinstance(r, (list, tuple)):
+                flattened.extend(r)
+            else:
+                flattened.append(r)
+        flat_result = flattened
 
-    #--- Combine text lines if multiple
-    analysis_text = "\n".join(analysis_texts) if analysis_texts else ""  #---
-
-    # Auto-generate labels
     if labels is None:
         labels = []
         if space_name == PERIODONTITIS_SPACE:
-            num_teeth = len(image_paths) // 2
+            num_teeth = len(flat_result) // 2
             for i in range(num_teeth):
                 for m in ["cej", "abc"]:
                     labels.append(f"tooth{i+1}_{m}")
         else:
-            labels = [f"output{i+1}" for i in range(len(image_paths))]
+            labels = [f"output{i+1}" for i in range(len(flat_result))]
 
-    # Encode available images
     encoded_results = {}
-    for label, path in zip(labels, image_paths):
-        if os.path.exists(path):
-            with open(path, "rb") as f:
-                encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
+    for label, item in zip(labels, flat_result):
+        if isinstance(item, str):
+            #-- Case 1: it's a path
+            if os.path.exists(item):
+                with open(item, "rb") as f:
+                    encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
+            #-- Case 2: already Base64 or data URL
+            elif item.strip().startswith("UklG") or item.strip().startswith("/9j/"):
+                encoded_results[label] = item
         else:
             encoded_results[label] = None
 
-    #--- If no images at all, return None instead of {}
-    if not encoded_results:  #---
-        encoded_results = None  #---
-
-    return encoded_results, analysis_text  #---
+    #-- Return structure depends on the space
+    if space_name == PERIODONTITIS_SPACE:
+        return {
+            "images": encoded_results,
+            "analysis": analysis_text
+        }
+    else:
+        #-- Gingivitis returns only images
+        return encoded_results
 
 
 @app.route("/")
@@ -97,7 +104,8 @@ def predict_gingivitis():
             image.save(temp_file.name)
             temp_path = temp_file.name
 
-        encoded_results, _ = call_huggingface(
+        #-- Gingivitis: returns only images (original behavior)
+        encoded_results = call_huggingface(
             GINGIVITIS_SPACE,
             temp_path,
             labels=["swelling", "redness", "bleeding"]
@@ -123,7 +131,8 @@ def predict_periodontitis():
             image.save(temp_file.name)
             temp_path = temp_file.name
 
-        encoded_results, analysis = call_huggingface(
+        #-- Periodontitis: returns both images and analysis
+        response = call_huggingface(
             PERIODONTITIS_SPACE,
             temp_path,
             labels=None,
@@ -133,8 +142,8 @@ def predict_periodontitis():
         os.remove(temp_path)
 
         return jsonify({
-            "images": encoded_results,  # may be None
-            "analysis": analysis or "No analysis text returned"
+            "images": response["images"],
+            "analysis": response.get("analysis") or "No analysis text returned"
         })
 
     except TimeoutError as te:
