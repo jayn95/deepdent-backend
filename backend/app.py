@@ -34,17 +34,25 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
     analysis_text = None
     flat_result = []
 
+    #-- Handle different result structures
     if isinstance(result, (list, tuple)):
-        if isinstance(result[-1], str) and len(result) > 1:
+        #-- Check if last item is analysis text
+        if result and isinstance(result[-1], str) and ("mean=" in result[-1] or "Tooth" in result[-1]):
             analysis_text = result[-1]
             flat_result = result[:-1]
         else:
             flat_result = result
     elif isinstance(result, str):
-        analysis_text = result
+        #-- If result is only a string, it's probably analysis text
+        if "mean=" in result or "Tooth" in result:
+            analysis_text = result
+            flat_result = []
+        else:
+            flat_result = [result]
     else:
         flat_result = [result]
 
+    #-- Flatten if needed
     if flatten:
         flattened = []
         for r in flat_result:
@@ -54,6 +62,7 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
                 flattened.append(r)
         flat_result = flattened
 
+    #-- Generate labels
     if labels is None:
         labels = []
         if space_name == PERIODONTITIS_SPACE:
@@ -64,27 +73,28 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
         else:
             labels = [f"output{i+1}" for i in range(len(flat_result))]
 
+    #-- Encode images
     encoded_results = {}
     for label, item in zip(labels, flat_result):
         if isinstance(item, str):
-            #-- Case 1: it's a path
+            #-- Case 1: it's a file path
             if os.path.exists(item):
                 with open(item, "rb") as f:
                     encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
-            #-- Case 2: already Base64 or data URL
-            elif item.strip().startswith("UklG") or item.strip().startswith("/9j/"):
+            #-- Case 2: already Base64 string
+            elif item.startswith("UklG") or item.startswith("/9j/") or len(item) > 1000:
                 encoded_results[label] = item
-        else:
+        elif item is not None:
             encoded_results[label] = None
 
-    #-- Return structure depends on the space
+    #-- For periodontitis: return both images and analysis
     if space_name == PERIODONTITIS_SPACE:
         return {
             "images": encoded_results,
             "analysis": analysis_text
         }
     else:
-        #-- Gingivitis returns only images
+        #-- For gingivitis: return only images
         return encoded_results
 
 
@@ -104,14 +114,20 @@ def predict_gingivitis():
             image.save(temp_file.name)
             temp_path = temp_file.name
 
-        #-- Gingivitis: returns only images (original behavior)
+        #-- Gingivitis returns only images
         encoded_results = call_huggingface(
             GINGIVITIS_SPACE,
             temp_path,
-            labels=["swelling", "redness", "bleeding"]
+            labels=["swelling", "redness", "bleeding"]  #-- Should return 3 images
         )
 
         os.remove(temp_path)
+        
+        #-- Debug: Check how many images we got
+        print(f"Gingivitis results count: {len(encoded_results)}")
+        for key in encoded_results:
+            print(f" - {key}: {'exists' if encoded_results[key] else 'None'}")
+        
         return jsonify({"images": encoded_results})
 
     except TimeoutError as te:
@@ -131,7 +147,7 @@ def predict_periodontitis():
             image.save(temp_file.name)
             temp_path = temp_file.name
 
-        #-- Periodontitis: returns both images and analysis
+        #-- Periodontitis returns both images and analysis
         response = call_huggingface(
             PERIODONTITIS_SPACE,
             temp_path,
@@ -140,6 +156,10 @@ def predict_periodontitis():
         )
 
         os.remove(temp_path)
+
+        #-- Debug: Check what we received
+        print(f"Periodontitis images count: {len(response['images']) if response['images'] else 0}")
+        print(f"Periodontitis analysis: {response.get('analysis')}")
 
         return jsonify({
             "images": response["images"],
