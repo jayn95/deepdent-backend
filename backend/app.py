@@ -11,10 +11,16 @@ PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 
 
 def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout_seconds=120):
+    """
+    Calls the specified Hugging Face Space API to run a prediction with a timeout.
+    Processes the result to separate analysis text from image file paths and
+    encodes the images into Base64 strings.
+    """
     client = Client(space_name)
     result_container = {}
 
     def run_predict():
+        # Call the HF model with the image and confidence thresholds
         result_container["data"] = client.predict(
             handle_file(image_path),
             0.4,
@@ -22,6 +28,7 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
             api_name="/predict"
         )
 
+    # Run prediction in a separate thread with a timeout
     thread = threading.Thread(target=run_predict)
     thread.start()
     thread.join(timeout=timeout_seconds)
@@ -34,16 +41,16 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
     analysis_text = None
     flat_result = []
 
-    #-- Handle different result structures
+    # --- Step 1: Handle different result structures and extract analysis text ---
     if isinstance(result, (list, tuple)):
-        #-- Check if last item is analysis text
+        # Check if last item is analysis text (common Gradio pattern)
         if result and isinstance(result[-1], str) and ("mean=" in result[-1] or "Tooth" in result[-1]):
             analysis_text = result[-1]
-            flat_result = result[:-1]
+            flat_result = result[:-1]  # Image file paths are now in flat_result
         else:
             flat_result = result
     elif isinstance(result, str):
-        #-- If result is only a string, it's probably analysis text
+        # If result is only a string, it's probably analysis text
         if "mean=" in result or "Tooth" in result:
             analysis_text = result
             flat_result = []
@@ -52,7 +59,7 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
     else:
         flat_result = [result]
 
-    #-- Flatten if needed
+    # --- Step 2: Flatten if needed (for periodontitis, which returns lists of lists) ---
     if flatten:
         flattened = []
         for r in flat_result:
@@ -62,49 +69,50 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
                 flattened.append(r)
         flat_result = flattened
 
-    #-- Generate labels
+    # --- Step 3: Generate labels for the output images ---
     if labels is None:
         labels = []
         if space_name == PERIODONTITIS_SPACE:
-            num_teeth = len(flat_result) // 2
-            for i in range(num_teeth):
-                for m in ["cej", "abc"]:
-                    labels.append(f"tooth{i+1}_{m}")
+            # Periodontitis model returns two images per tooth (cej, abc)
+            num_images = len(flat_result)
+            if num_images > 0:
+                num_teeth = num_images // 2
+                for i in range(num_teeth):
+                    for m in ["cej", "abc"]:
+                        labels.append(f"tooth{i+1}_{m}")
         else:
             labels = [f"output{i+1}" for i in range(len(flat_result))]
 
-    # 🟢 MODIFICATION START: Corrected Image Encoding Logic
+    # --- Step 4: Encode images (Refined logic for robustness) ---
     encoded_results = {}
     for label, item in zip(labels, flat_result):
         if isinstance(item, str):
-            #-- Case 1: it's a file path returned by Gradio
-            if os.path.exists(item):
-                try:
+            try:
+                # Case A: Gradio returned a temporary file path
+                if os.path.exists(item):
                     with open(item, "rb") as f:
                         encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
-                    # Clean up the temp file created by gradio_client (good practice)
-                    os.remove(item) 
-                except Exception:
-                    encoded_results[label] = None
-            #-- Case 2: already Base64 string (check for common Base64 prefixes)
-            elif item.startswith("UklG") or item.startswith("/9j/") or len(item) > 1000:
-                encoded_results[label] = item
-            else:
-                # String but not a file path or Base64 (e.g., an error message)
+                    # Note: We rely on gradio_client to handle its temp file cleanup.
+                    # Explicit removal is risky as the file might already be gone.
+                    
+                # Case B: Gradio returned a Base64 string directly
+                elif item.startswith("UklG") or item.startswith("/9j/") or len(item) > 1000:
+                    encoded_results[label] = item
+                else:
+                    encoded_results[label] = None # String but not file or Base64
+            except Exception as e:
+                print(f"Error encoding image {label}: {e}")
                 encoded_results[label] = None
         else:
-            # Non-string item (e.g., None)
-            encoded_results[label] = None
-    # 🟢 MODIFICATION END
-    
-    #-- For periodontitis: return both images and analysis
+            encoded_results[label] = None # Not a string (e.g., None, dict, number)
+
+    # --- Step 5: Return final structure ---
     if space_name == PERIODONTITIS_SPACE:
         return {
             "images": encoded_results,
             "analysis": analysis_text
         }
     else:
-        #-- For gingivitis: return only images
         return encoded_results
 
 
@@ -124,19 +132,15 @@ def predict_gingivitis():
             image.save(temp_file.name)
             temp_path = temp_file.name
 
-        #-- Gingivitis returns only images
         encoded_results = call_huggingface(
             GINGIVITIS_SPACE,
             temp_path,
-            labels=["swelling", "redness", "bleeding"] 
+            labels=["swelling", "redness", "bleeding"]
         )
 
         os.remove(temp_path)
         
-        #-- Debug: Check how many images we got
         print(f"Gingivitis results count: {len(encoded_results)}")
-        for key in encoded_results:
-            print(f" - {key}: {'exists' if encoded_results[key] else 'None'}")
         
         return jsonify({"images": encoded_results})
 
@@ -144,7 +148,6 @@ def predict_gingivitis():
         return jsonify({"error": str(te)}), 504
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 
 @app.route("/predict/periodontitis", methods=["POST"])
@@ -158,7 +161,6 @@ def predict_periodontitis():
             image.save(temp_file.name)
             temp_path = temp_file.name
 
-        #-- Periodontitis returns both images and analysis
         response = call_huggingface(
             PERIODONTITIS_SPACE,
             temp_path,
@@ -168,7 +170,6 @@ def predict_periodontitis():
 
         os.remove(temp_path)
 
-        #-- Debug: Check what we received
         print(f"Periodontitis images count: {len(response['images']) if response['images'] else 0}")
         print(f"Periodontitis analysis: {response.get('analysis')}")
 
@@ -180,6 +181,8 @@ def predict_periodontitis():
     except TimeoutError as te:
         return jsonify({"error": str(te)}), 504
     except Exception as e:
+        # Log the error for better debugging
+        print(f"An unexpected error occurred: {e}")
         return jsonify({"error": str(e)}), 500
 
 
