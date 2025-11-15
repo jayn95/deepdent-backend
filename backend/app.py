@@ -73,20 +73,30 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
         else:
             labels = [f"output{i+1}" for i in range(len(flat_result))]
 
-    #-- Encode images
+    # 🟢 MODIFICATION START: Corrected Image Encoding Logic
     encoded_results = {}
     for label, item in zip(labels, flat_result):
         if isinstance(item, str):
-            #-- Case 1: it's a file path
+            #-- Case 1: it's a file path returned by Gradio
             if os.path.exists(item):
-                with open(item, "rb") as f:
-                    encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
-            #-- Case 2: already Base64 string
+                try:
+                    with open(item, "rb") as f:
+                        encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
+                    # Clean up the temp file created by gradio_client (good practice)
+                    os.remove(item) 
+                except Exception:
+                    encoded_results[label] = None
+            #-- Case 2: already Base64 string (check for common Base64 prefixes)
             elif item.startswith("UklG") or item.startswith("/9j/") or len(item) > 1000:
                 encoded_results[label] = item
-        elif item is not None:
+            else:
+                # String but not a file path or Base64 (e.g., an error message)
+                encoded_results[label] = None
+        else:
+            # Non-string item (e.g., None)
             encoded_results[label] = None
-
+    # 🟢 MODIFICATION END
+    
     #-- For periodontitis: return both images and analysis
     if space_name == PERIODONTITIS_SPACE:
         return {
@@ -118,7 +128,7 @@ def predict_gingivitis():
         encoded_results = call_huggingface(
             GINGIVITIS_SPACE,
             temp_path,
-            labels=["swelling", "redness", "bleeding"]  #-- Should return 3 images
+            labels=["swelling", "redness", "bleeding"] 
         )
 
         os.remove(temp_path)
@@ -134,6 +144,7 @@ def predict_gingivitis():
         return jsonify({"error": str(te)}), 504
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 
 @app.route("/predict/periodontitis", methods=["POST"])
