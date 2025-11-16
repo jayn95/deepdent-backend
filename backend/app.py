@@ -42,11 +42,13 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
     flat_result = []
 
     # --- Step 1: Handle different result structures and extract analysis text ---
-    if isinstance(result, (list, tuple)):
-        # Check if last item is analysis text (common Gradio pattern)
-        if result and isinstance(result[-1], str) and ("mean=" in result[-1] or "Tooth" in result[-1]):
+    if result and isinstance(result[-1], str):
+        if space_name == GINGIVITIS_SPACE and "Gingivitis" in result[-1]:
             analysis_text = result[-1]
-            flat_result = result[:-1]  # Image file paths are now in flat_result
+            flat_result = result[:-1]
+        elif space_name == PERIODONTITIS_SPACE and ("mean=" in result[-1] or "Tooth" in result[-1]):
+            analysis_text = result[-1]
+            flat_result = result[:-1]
         else:
             flat_result = result
     elif isinstance(result, str):
@@ -142,7 +144,10 @@ def predict_gingivitis():
         
         print(f"Gingivitis results count: {len(encoded_results)}")
         
-        return jsonify({"images": encoded_results})
+        return jsonify({
+            "images": response["images"],
+            "diagnosis": response.get("analysis") or "No diagnosis returned"
+        })
 
     except TimeoutError as te:
         return jsonify({"error": str(te)}), 504
@@ -188,4 +193,5 @@ def predict_periodontitis():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
+
     app.run(host="0.0.0.0", port=port)
