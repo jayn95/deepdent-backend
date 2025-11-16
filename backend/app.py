@@ -145,7 +145,7 @@ def predict_gingivitis():
         print(f"Gingivitis results count: {len(encoded_results)}")
         
         return jsonify({
-            "images": response["images"],
+            "images": encoded_results["images"],
             "diagnosis": encoded_results.get("analysis") or "No diagnosis returned"
         })
 
@@ -195,4 +195,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
