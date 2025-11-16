@@ -146,7 +146,7 @@ def predict_gingivitis():
         
         return jsonify({
             "images": response["images"],
-            "diagnosis": response.get("analysis") or "No diagnosis returned"
+            "diagnosis": encoded_results.get("analysis") or "No diagnosis returned"
         })
 
     except TimeoutError as te:
@@ -195,3 +195,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
