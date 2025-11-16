@@ -109,7 +109,8 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
             encoded_results[label] = None # Not a string (e.g., None, dict, number)
 
     # --- Step 5: Return final structure ---
-    if space_name == PERIODONTITIS_SPACE:
+    # --- Step 5: Return final structure ---
+    if space_name == PERIODONTITIS_SPACE or space_name == GINGIVITIS_SPACE:
         return {
             "images": encoded_results,
             "analysis": analysis_text
@@ -195,5 +196,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
