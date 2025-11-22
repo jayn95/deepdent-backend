@@ -74,15 +74,8 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
 
     # --- Step 3: Generate labels for the output images ---
     if labels is None:
-        labels = []
         if space_name == PERIODONTITIS_SPACE:
-            # Periodontitis model returns two images per tooth (cej, abc)
-            num_images = len(flat_result)
-            if num_images > 0:
-                num_teeth = num_images // 2
-                for i in range(num_teeth):
-                    for m in ["cej", "abc"]:
-                        labels.append(f"tooth{i+1}_{m}")
+            labels = [f"tooth1"]
         else:
             labels = [f"output{i+1}" for i in range(len(flat_result))]
 
@@ -222,6 +215,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
