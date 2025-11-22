@@ -191,11 +191,37 @@ def predict_periodontitis():
         print(f"An unexpected error occurred: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route("/debug/periodontitis", methods=["POST"])
+def debug_periodontitis():
+    try:
+        image = request.files.get("image")
+        if not image:
+            return jsonify({"error": "No image provided"}), 400
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+            image.save(temp_file.name)
+            temp_path = temp_file.name
+
+        client = Client(PERIODONTITIS_SPACE)
+        result = client.predict(
+            handle_file(temp_path),
+            0.4,
+            0.5,
+            api_name="/predict"
+        )
+
+        print("RAW PERIODONTITIS RESULT:", result)
+        return jsonify({"raw": str(result)})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
