@@ -37,29 +37,30 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
         raise TimeoutError(f"Hugging Face request to {space_name} timed out after {timeout_seconds}s")
 
     result = result_container.get("data", [])
-
-    analysis_text = None
-    flat_result = []
-
-    # --- Step 1: Handle different result structures and extract analysis text ---
-    if result and isinstance(result[-1], str):
-        if space_name == GINGIVITIS_SPACE and "Gingivitis" in result[-1]:
-            analysis_text = result[-1]
-            flat_result = result[:-1]
-        elif space_name == PERIODONTITIS_SPACE and ("mean=" in result[-1] or "Tooth" in result[-1]):
-            analysis_text = result[-1]
-            flat_result = result[:-1]
-        else:
-            flat_result = result
-    elif isinstance(result, str):
-        # If result is only a string, it's probably analysis text
-        if "mean=" in result or "Tooth" in result:
-            analysis_text = result
+    
+    # Handle tuple case (periodontitis returns single image + analysis)
+    if isinstance(result, tuple):
+        flat_result = [result[0]]
+        analysis_text = result[1]
+    else:
+        # Fallback for list or single string (gingivitis)
+        if isinstance(result, list):
             flat_result = []
+            analysis_text = None
+            for item in result:
+                if isinstance(item, str) and ("Gingivitis" in item or "mean=" in item or "Tooth" in item):
+                    analysis_text = item
+                else:
+                    flat_result.append(item)
+        elif isinstance(result, str):
+            flat_result = []
+            if "mean=" in result or "Tooth" in result or "Gingivitis" in result:
+                analysis_text = result
+            else:
+                flat_result = [result]
         else:
             flat_result = [result]
-    else:
-        flat_result = [result]
+            analysis_text = None
 
     # --- Step 2: Flatten if needed (for periodontitis, which returns lists of lists) ---
     if flatten:
@@ -221,6 +222,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
