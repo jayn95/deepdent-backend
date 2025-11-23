@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 from gradio_client import Client, handle_file
 import tempfile, base64, os, threading
 from flask_cors import CORS
+from mm_scale import compute_mm_per_pixel, convert_px_text_to_mm
+
 
 app = Flask(__name__)
 CORS(app)
@@ -170,12 +172,18 @@ def predict_periodontitis():
 
         os.remove(temp_path)
 
+        
+        analysis_px = response.get("analysis") or "No analysis text returned"
+        mm_per_pixel, method = compute_mm_per_pixel(temp_path)
+        analysis_mm = convert_px_text_to_mm(analysis_px, mm_per_pixel)
+
         print(f"Periodontitis images count: {len(response['images']) if response['images'] else 0}")
         print(f"Periodontitis analysis: {response.get('analysis')}")
 
         return jsonify({
             "images": response["images"],
-            "analysis": response.get("analysis") or "No analysis text returned"
+            "analysis": analysis_mm,
+            "scale_method": method
         })
 
     except TimeoutError as te:
