@@ -2,6 +2,3 @@ flask
 flask-cors
 gradio_client
 gunicorn
-Pillow
-opencv-python-headless
-numpy
