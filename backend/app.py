@@ -83,7 +83,9 @@ def call_gingivitis_model(image_path, timeout_seconds=240):
 
 def call_periodontitis_model(image_path, timeout_seconds=240):
     """
-    Calls the periodontitis model on Hugging Face and returns flattened images + analysis.
+    Calls the periodontitis HF Space which returns:
+    1) Numpy image (combined_rgb)
+    2) summary_text
     """
     client = Client(PERIODONTITIS_SPACE)
     result_container = {}
@@ -91,51 +93,35 @@ def call_periodontitis_model(image_path, timeout_seconds=240):
     def run_predict():
         result_container["data"] = client.predict(
             handle_file(image_path),
-            0.4,
-            0.5,
             api_name="/predict"
         )
 
     thread = threading.Thread(target=run_predict)
     thread.start()
-    thread.join(timeout=timeout_seconds)
+    thread.join(timeout_seconds)
 
     if thread.is_alive():
-        raise TimeoutError(f"Periodontitis model timed out after {timeout_seconds}s")
+        raise TimeoutError("Periodontitis model timed out")
 
-    result = result_container.get("data", [])
+    data = result_container.get("data")
+    if not data:
+        raise ValueError("HF Space returned empty result")
 
-    # Flatten lists if returned as nested lists
-    flattened = []
-    analysis_text = None
-    if isinstance(result, tuple):
-        flattened = [result[0]]
-        analysis_text = result[1]
-    elif isinstance(result, list):
-        for r in result:
-            if isinstance(r, (list, tuple)):
-                flattened.extend(r)
-            else:
-                flattened.append(r)
-    else:
-        flattened = [result]
+    # Unpack HF returned data
+    combined_img = data[0]  # numpy array (RGB)
+    summary_text = data[1]  # string
 
-    # Encode images
-    encoded_results = {}
-    for i, item in enumerate(flattened):
-        label = f"tooth{i+1}"
-        try:
-            if isinstance(item, str) and os.path.exists(item):
-                with open(item, "rb") as f:
-                    encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
-            else:
-                encoded_results[label] = item
-        except Exception as e:
-            print(f"Error encoding {label}: {e}")
-            encoded_results[label] = None
+    # Convert image → Base64 so Flutter can display it
+    try:
+        import cv2, base64
+        _, buf = cv2.imencode(".jpg", cv2.cvtColor(combined_img, cv2.COLOR_RGB2BGR))
+        img_b64 = base64.b64encode(buf).decode("utf-8")
+    except Exception as e:
+        raise RuntimeError(f"Failed to encode image: {e}")
 
-    return {"images": encoded_results, "analysis": analysis_text}
-
+    return {
+        "annotated_image": img_b64,
+        "analys
 
 # --- Routes ---
 
@@ -181,10 +167,7 @@ def predict_periodontitis():
 
     try:
         response = call_periodontitis_model(temp_path)
-        return jsonify({
-            "images": response["images"],
-            "analysis": response.get("analysis") or "No analysis text returned"
-        })
+        return jsonify(response)
     except TimeoutError as te:
         return jsonify({"error": str(te)}), 504
     except Exception as e:
