@@ -2,220 +2,196 @@ from flask import Flask, request, jsonify
 from gradio_client import Client, handle_file
 import tempfile, base64, os, threading
 from flask_cors import CORS
-import numpy as np
-import cv2
 
-app = Flask(__name__)
+app = Flask(**name**)
 CORS(app)
 
 GINGIVITIS_SPACE = "jayn95/deepdent_gingivitis"
 PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 
+# ----------------- Hugging Face Model Calls -----------------
 
-def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout_seconds=120):
-    """
-    Calls the specified Hugging Face Space API to run a prediction with a timeout.
-    Processes the result to separate analysis text from image file paths and
-    encodes the images into Base64 strings.
-    """
-    client = Client(space_name)
-    result_container = {}
+def call_gingivitis_model(image_path, timeout_seconds=240):
+""" Calls the Hugging Face gingivitis Space and returns Base64 images and diagnosis """
+import io
+from PIL import Image
+import numpy as np
 
-    def run_predict():
-        # Call the HF model with the image and confidence thresholds
-        result_container["data"] = client.predict(
-            handle_file(image_path),
-            0.4,
-            0.5,
-            api_name="/predict"
-        )
+```
+client = Client(GINGIVITIS_SPACE)
+result_container = {}
 
-    # Run prediction in a separate thread with a timeout
-    thread = threading.Thread(target=run_predict)
-    thread.start()
-    thread.join(timeout=timeout_seconds)
+def run_predict():
+    result_container["data"] = client.predict(
+        handle_file(image_path),
+        0.4,
+        0.5,
+        api_name="/predict"
+    )
 
-    if thread.is_alive():
-        raise TimeoutError(f"Hugging Face request to {space_name} timed out after {timeout_seconds}s")
+thread = threading.Thread(target=run_predict)
+thread.start()
+thread.join(timeout=timeout_seconds)
+if thread.is_alive():
+    raise TimeoutError(f"Gingivitis model timed out after {timeout_seconds}s")
 
-    result = result_container.get("data", [])
-    
-    # Handle tuple case (periodontitis returns single image + analysis)
-    if isinstance(result, tuple):
-        flat_result = [result[0]]
-        analysis_text = result[1]
-    else:
-        # Fallback for list or single string (gingivitis)
-        if isinstance(result, list):
-            flat_result = []
-            analysis_text = None
-            for item in result:
-                if isinstance(item, str) and ("Gingivitis" in item or "mean=" in item or "Tooth" in item):
-                    analysis_text = item
-                else:
-                    flat_result.append(item)
-        elif isinstance(result, str):
-            flat_result = []
-            if "mean=" in result or "Tooth" in result or "Gingivitis" in result:
-                analysis_text = result
-            else:
-                flat_result = [result]
+result = result_container.get("data", [])
+if len(result) != 4:
+    raise ValueError(f"Unexpected result from gingivitis model: {result}")
+
+labels = ["swelling", "redness", "bleeding"]
+images = {}
+for label, item in zip(labels, result[:3]):
+    try:
+        # File path returned by HF
+        if isinstance(item, str) and os.path.exists(item):
+            with open(item, "rb") as f:
+                images[label] = base64.b64encode(f.read()).decode("utf-8")
+        # Base64 string
+        elif isinstance(item, str):
+            images[label] = item
+        # PIL.Image
+        elif hasattr(item, "save"):
+            buf = io.BytesIO()
+            item.save(buf, format="JPEG")
+            images[label] = base64.b64encode(buf.getvalue()).decode("utf-8")
+        # NumPy array
+        elif isinstance(item, np.ndarray):
+            pil_img = Image.fromarray(item)
+            buf = io.BytesIO()
+            pil_img.save(buf, format="JPEG")
+            images[label] = base64.b64encode(buf.getvalue()).decode("utf-8")
         else:
-            flat_result = [result]
-            analysis_text = None
+            images[label] = None
+    except Exception as e:
+        print(f"Error converting {label} to Base64: {e}")
+        images[label] = None
 
-    # --- Step 2: Flatten if needed (for periodontitis, which returns lists of lists) ---
-    if flatten:
-        flattened = []
-        for r in flat_result:
-            if isinstance(r, (list, tuple)):
-                flattened.extend(r)
-            else:
-                flattened.append(r)
-        flat_result = flattened
+diagnosis = result[3]
+return {"images": images, "diagnosis": diagnosis}
+```
 
-    # --- Step 3: Generate labels for the output images ---
-    if labels is None:
-        if space_name == PERIODONTITIS_SPACE:
-            labels = [f"tooth1"]
-        else:
-            labels = [f"output{i+1}" for i in range(len(flat_result))]
+def call_periodontitis_model(image_path, timeout_seconds=240):
+""" Calls the Hugging Face periodontitis Space and returns Base64 annotated image and analysis """
+import io
+from PIL import Image
+import numpy as np
+import cv2
 
-    # --- Step 4: Encode images (Refined logic for robustness) ---
-    encoded_results = {}
-    for label, item in zip(labels, flat_result):
-        if isinstance(item, str):
-            try:
-                # Case A: Gradio returned a temporary file path
-                if os.path.exists(item):
-                    with open(item, "rb") as f:
-                        encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
-                    # Note: We rely on gradio_client to handle its temp file cleanup.
-                    # Explicit removal is risky as the file might already be gone.
-                    
-                # Case B: Gradio returned a Base64 string directly
-                elif item.startswith("UklG") or item.startswith("/9j/") or len(item) > 1000:
-                    encoded_results[label] = item
-                else:
-                    encoded_results[label] = None # String but not file or Base64
-            except Exception as e:
-                print(f"Error encoding image {label}: {e}")
-                encoded_results[label] = None
-        else:
-            encoded_results[label] = None # Not a string (e.g., None, dict, number)
+```
+client = Client(PERIODONTITIS_SPACE)
+result_container = {}
 
-    # --- Step 5: Return final structure ---
-    # --- Step 5: Return final structure ---
-    if space_name == PERIODONTITIS_SPACE or space_name == GINGIVITIS_SPACE:
-        return {
-            "images": encoded_results,
-            "analysis": analysis_text
-        }
-    else:
-        return encoded_results
+def run_predict():
+    result_container["data"] = client.predict(handle_file(image_path), api_name="/predict")
 
+thread = threading.Thread(target=run_predict)
+thread.start()
+thread.join(timeout_seconds)
+if thread.is_alive():
+    raise TimeoutError("Periodontitis model timed out")
+
+data = result_container.get("data")
+if not data or len(data) != 2:
+    raise ValueError(f"Unexpected result from periodontitis model: {data}")
+
+combined_img, summary_text = data
+
+# Convert image to Base64
+if hasattr(combined_img, "save"):  # PIL.Image
+    buf = io.BytesIO()
+    combined_img.save(buf, format="JPEG")
+    img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+elif isinstance(combined_img, np.ndarray):
+    _, buf = cv2.imencode(".jpg", cv2.cvtColor(combined_img, cv2.COLOR_RGB2BGR))
+    img_b64 = base64.b64encode(buf).decode("utf-8")
+else:
+    raise TypeError(f"Unexpected image type: {type(combined_img)}")
+
+return {"annotated_image": img_b64, "analysis": summary_text}
+```
+
+# ----------------- Routes -----------------
 
 @app.route("/")
 def home():
-    return jsonify({"status": "DeepDent backend running successfully!"})
-
+return jsonify({"status": "DeepDent backend running successfully!"})
 
 @app.route("/predict/gingivitis", methods=["POST"])
 def predict_gingivitis():
-    try:
-        image = request.files.get("image")
-        if not image:
-            return jsonify({"error": "No image provided"}), 400
+image = request.files.get("image")
+if not image:
+return jsonify({"error": "No image provided"}), 400
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
-            image.save(temp_file.name)
-            temp_path = temp_file.name
+```
+with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+    image.save(temp_file.name)
+    temp_path = temp_file.name
 
-        encoded_results = call_huggingface(
-            GINGIVITIS_SPACE,
-            temp_path,
-            labels=["swelling", "redness", "bleeding"]
-        )
-
-        os.remove(temp_path)
-        
-        print(f"Gingivitis results count: {len(encoded_results)}")
-        
-        return jsonify({
-            "images": encoded_results["images"],
-            "diagnosis": encoded_results.get("analysis") or "No diagnosis returned"
-        })
-
-    except TimeoutError as te:
-        return jsonify({"error": str(te)}), 504
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+try:
+    response = call_gingivitis_model(temp_path)
+    return jsonify({
+        "images": response["images"],
+        "diagnosis": response.get("diagnosis") or "No diagnosis returned"
+    })
+except TimeoutError as te:
+    return jsonify({"error": str(te)}), 504
+except Exception as e:
+    return jsonify({"error": str(e)}), 500
+finally:
+    os.remove(temp_path)
+```
 
 @app.route("/predict/periodontitis", methods=["POST"])
 def predict_periodontitis():
-    try:
-        image = request.files.get("image")
-        if not image:
-            return jsonify({"error": "No image provided"}), 400
+image = request.files.get("image")
+if not image:
+return jsonify({"error": "No image provided"}), 400
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
-            image.save(temp_file.name)
-            temp_path = temp_file.name
+```
+with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+    image.save(temp_file.name)
+    temp_path = temp_file.name
 
-        response = call_huggingface(
-            PERIODONTITIS_SPACE,
-            temp_path,
-            labels=None,
-            flatten=True
-        )
+try:
+    response = call_periodontitis_model(temp_path)
+    return jsonify(response)
+except TimeoutError as te:
+    return jsonify({"error": str(te)}), 504
+except Exception as e:
+    return jsonify({"error": str(e)}), 500
+finally:
+    os.remove(temp_path)
+```
 
-        os.remove(temp_path)
+# Optional debug routes
 
-        print(f"Periodontitis images count: {len(response['images']) if response['images'] else 0}")
-        print(f"Periodontitis analysis: {response.get('analysis')}")
+@app.route("/debug/gingivitis", methods=["POST"])
+def debug_gingivitis():
+image = request.files.get("image")
+with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+image.save(temp_file.name)
+temp_path = temp_file.name
 
-        return jsonify({
-            "images": response["images"],
-            "analysis": response.get("analysis") or "No analysis text returned"
-        })
-
-    except TimeoutError as te:
-        return jsonify({"error": str(te)}), 504
-    except Exception as e:
-        # Log the error for better debugging
-        print(f"An unexpected error occurred: {e}")
-        return jsonify({"error": str(e)}), 500
+```
+client = Client(GINGIVITIS_SPACE)
+result = client.predict(handle_file(temp_path), 0.4, 0.5, api_name="/predict")
+return jsonify({"raw": str(result)})
+```
 
 @app.route("/debug/periodontitis", methods=["POST"])
 def debug_periodontitis():
-    try:
-        image = request.files.get("image")
-        if not image:
-            return jsonify({"error": "No image provided"}), 400
+image = request.files.get("image")
+with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+image.save(temp_file.name)
+temp_path = temp_file.name
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
-            image.save(temp_file.name)
-            temp_path = temp_file.name
+```
+client = Client(PERIODONTITIS_SPACE)
+result = client.predict(handle_file(temp_path), api_name="/predict")
+return jsonify({"raw": str(result)})
+```
 
-        client = Client(PERIODONTITIS_SPACE)
-        result = client.predict(
-            handle_file(temp_path),
-            0.4,
-            0.5,
-            api_name="/predict"
-        )
-
-        print("RAW PERIODONTITIS RESULT:", result)
-        return jsonify({"raw": str(result)})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-
-    app.run(host="0.0.0.0", port=port)
-
-
+if **name** == "**main**":
+port = int(os.environ.get("PORT", 5000))
+app.run(host="0.0.0.0", port=port, debug=True)
