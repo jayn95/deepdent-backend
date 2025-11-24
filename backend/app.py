@@ -7,11 +7,11 @@ app = Flask(__name__)
 CORS(app)
 
 # NEW — Separate Spaces
-SWELLING_SPACE = "jayn95/deepdent_swelling"
-REDNESS_SPACE = "jayn95/deepdent_redness"
-BLEEDING_SPACE = "jayn95/deepdent_bleeding"
+SWELLING_SPACE = "DeepdentTeam/Gingiviitis-Swelling"
+REDNESS_SPACE = "DeepdentTeam/Gingiviitis-Redness"
+BLEEDING_SPACE = "DeepdentTeam/Gingiviitis-Bleeding"
 
-PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
+PERIODONTITIS_SPACE = "DeepdentTeam/deepdent_periodontitis"
 
 def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout_seconds=300):
     """
@@ -282,6 +282,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
