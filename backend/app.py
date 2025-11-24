@@ -83,10 +83,7 @@ def call_gingivitis_model(image_path, timeout_seconds=240):
 
 def call_periodontitis_model(image_path, timeout_seconds=240):
     """
-    Calls the periodontitis HF Space and returns:
-    - Base64 encoded images
-    - Structured measurements
-    - Summary text
+    Calls the periodontitis model on Hugging Face and returns flattened images + analysis.
     """
     client = Client(PERIODONTITIS_SPACE)
     result_container = {}
@@ -94,12 +91,11 @@ def call_periodontitis_model(image_path, timeout_seconds=240):
     def run_predict():
         result_container["data"] = client.predict(
             handle_file(image_path),
-            0.4,    # threshold 1
-            0.5,    # threshold 2
+            0.4,
+            0.5,
             api_name="/predict"
         )
 
-    # Run with timeout
     thread = threading.Thread(target=run_predict)
     thread.start()
     thread.join(timeout=timeout_seconds)
@@ -107,45 +103,38 @@ def call_periodontitis_model(image_path, timeout_seconds=240):
     if thread.is_alive():
         raise TimeoutError(f"Periodontitis model timed out after {timeout_seconds}s")
 
-    # HF Results
-    result = result_container.get("data", None)
+    result = result_container.get("data", [])
 
-    # =====================================================
-    # Expected HF return format:
-    # (combined_image_path, measurements_list, summary_text)
-    # =====================================================
-    print("🔍 HF RAW RESULT:", result, type(result))
+    # Flatten lists if returned as nested lists
+    flattened = []
+    analysis_text = None
+    if isinstance(result, tuple):
+        flattened = [result[0]]
+        analysis_text = result[1]
+    elif isinstance(result, list):
+        for r in result:
+            if isinstance(r, (list, tuple)):
+                flattened.extend(r)
+            else:
+                flattened.append(r)
+    else:
+        flattened = [result]
 
-    if not isinstance(result, list) or len(result) != 3:
-        raise ValueError("Unexpected model output format from HF space")
+    # Encode images
+    encoded_results = {}
+    for i, item in enumerate(flattened):
+        label = f"tooth{i+1}"
+        try:
+            if isinstance(item, str) and os.path.exists(item):
+                with open(item, "rb") as f:
+                    encoded_results[label] = base64.b64encode(f.read()).decode("utf-8")
+            else:
+                encoded_results[label] = item
+        except Exception as e:
+            print(f"Error encoding {label}: {e}")
+            encoded_results[label] = None
 
-    combined_image_path = result[0]
-    measurements = result[1]
-    summary_text = result[2]
-
-    # =====================================================
-    # Encode the combined output image as base64
-    # =====================================================
-    encoded_images = {}
-
-    try:
-        if isinstance(combined_image_path, str) and os.path.exists(combined_image_path):
-            with open(combined_image_path, "rb") as f:
-                encoded_images["combined"] = base64.b64encode(f.read()).decode("utf-8")
-        else:
-            encoded_images["combined"] = combined_image_path
-    except Exception as e:
-        print(f"Error encoding combined image: {e}")
-        encoded_images["combined"] = None
-
-    # =====================================================
-    # Final response to Flutter
-    # =====================================================
-    return {
-        "images": encoded_images,
-        "measurements": measurements,   # <---- structured list
-        "summary_text": summary_text    # <---- readable text
-    }
+    return {"images": encoded_results, "analysis": analysis_text}
 
 
 # --- Routes ---
@@ -202,6 +191,3 @@ def predict_periodontitis():
         return jsonify({"error": str(e)}), 500
     finally:
         os.remove(temp_path)
-
-
-
