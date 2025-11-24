@@ -14,12 +14,14 @@ PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 
 def call_gingivitis_model(image_path, timeout_seconds=240):
     """
-    Calls the gingivitis model on Hugging Face and returns images + analysis.
+    Calls the Hugging Face gingivitis Space.
+    Expects the Space to return Base64 images + diagnosis text directly.
     """
     client = Client(GINGIVITIS_SPACE)
     result_container = {}
 
     def run_predict():
+        # Hugging Face expects a file-like input
         result_container["data"] = client.predict(
             handle_file(image_path),
             0.4,
@@ -27,6 +29,7 @@ def call_gingivitis_model(image_path, timeout_seconds=240):
             api_name="/predict"
         )
 
+    import threading
     thread = threading.Thread(target=run_predict)
     thread.start()
     thread.join(timeout=timeout_seconds)
@@ -36,22 +39,16 @@ def call_gingivitis_model(image_path, timeout_seconds=240):
 
     result = result_container.get("data", [])
 
-    # Gingivitis usually returns a list of images + analysis text
-    images = {}
-    analysis_text = None
-    labels = ["swelling", "redness", "bleeding", "diagnosis"]
+    # Ensure we have 4 items: swelling, redness, bleeding, diagnosis
+    if len(result) != 4:
+        raise ValueError(f"Unexpected result from gingivitis model: {result}")
 
-    for label, item in zip(labels, result):
-        if isinstance(item, str) and os.path.exists(item):
-            with open(item, "rb") as f:
-                images[label] = base64.b64encode(f.read()).decode("utf-8")
-        elif isinstance(item, str) and (item.startswith("UklG") or item.startswith("/9j/") or len(item) > 1000):
-            images[label] = item
-        else:
-            if "Gingivitis" in str(item) or "mean=" in str(item) or "Tooth" in str(item):
-                analysis_text = item
+    # Map to labels
+    labels = ["swelling", "redness", "bleeding"]
+    images = dict(zip(labels, result[:3]))
+    diagnosis = result[3]
 
-    return {"images": images, "analysis": analysis_text}
+    return {"images": images, "diagnosis": diagnosis}
 
 
 def call_periodontitis_model(image_path, timeout_seconds=240):
@@ -123,6 +120,7 @@ def predict_gingivitis():
     if not image:
         return jsonify({"error": "No image provided"}), 400
 
+    # Save uploaded image temporarily
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
         image.save(temp_file.name)
         temp_path = temp_file.name
@@ -130,8 +128,8 @@ def predict_gingivitis():
     try:
         response = call_gingivitis_model(temp_path)
         return jsonify({
-            "images": response["images"],
-            "diagnosis": response.get("analysis") or "No diagnosis returned"
+            "images": response["images"],       # Base64 images
+            "diagnosis": response.get("diagnosis") or "No diagnosis returned"
         })
     except TimeoutError as te:
         return jsonify({"error": str(te)}), 504
