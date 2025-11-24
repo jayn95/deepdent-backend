@@ -1,4 +1,6 @@
 flask
-flask-cors
+flask_cors
 gradio_client
-gunicorn
+numpy
+opencv-python-headless
+pillow
