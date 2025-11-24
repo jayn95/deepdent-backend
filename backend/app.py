@@ -183,7 +183,7 @@ def home():
     return jsonify({"status": "DeepDent backend running successfully!"})
 
 
-@app.route("/detect/gingivitis", methods=["POST"])
+@app.route("/predict/gingivitis", methods=["POST"])
 def predict_gingivitis():
     try:
         image = request.files.get("image")
@@ -282,6 +282,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
