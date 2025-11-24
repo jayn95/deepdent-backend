@@ -295,7 +295,7 @@ app = Flask(__name__)
 CORS(app)
 
 GINGIVITIS_SPACE = "DeepdentTeam/deepdent_gingivitis"
-PERIODONTITIS_SPACE = "DeepdentTeam/deepdent_periodontitis"
+PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 
 
 def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout_seconds=240):
@@ -522,6 +522,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
