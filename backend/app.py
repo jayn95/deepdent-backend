@@ -283,9 +283,6 @@
 
 #     app.run(host="0.0.0.0", port=port)
 
-
-app.py - render
-
 from flask import Flask, request, jsonify
 from gradio_client import Client, handle_file
 import tempfile, base64, os, threading
@@ -522,11 +519,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
-
-
-
-
-
-
-
-
