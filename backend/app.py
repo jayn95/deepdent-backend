@@ -100,7 +100,26 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
                 print(f"Error encoding image {label}: {e}")
                 encoded_results[label] = None
         else:
-            encoded_results[label] = None # Not a string (e.g., None, dict, number)
+            # NEW: HF may return numpy arrays (images)
+            try:
+                import numpy as np
+                from PIL import Image
+                import io
+        
+                if isinstance(item, np.ndarray):
+                    # convert numpy → PIL
+                    pil_img = Image.fromarray(item)
+        
+                    # save to bytes
+                    buf = io.BytesIO()
+                    pil_img.save(buf, format="JPEG")
+                    encoded_results[label] = base64.b64encode(buf.getvalue()).decode("utf-8")
+                else:
+                    encoded_results[label] = None
+        
+            except Exception as e:
+                print(f"Error encoding numpy image {label}: {e}")
+                encoded_results[label] = None
 
     # --- Step 5: Return final structure ---
     # --- Step 5: Return final structure ---
@@ -132,7 +151,7 @@ def predict_gingivitis():
         encoded_results = call_huggingface(
             GINGIVITIS_SPACE,
             temp_path,
-            labels=["swelling", "redness", "bleeding"]
+            labels=["swelling", "redness", "bleeding", "diagnosis"]
         )
 
         os.remove(temp_path)
@@ -215,6 +234,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
