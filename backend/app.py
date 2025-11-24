@@ -114,7 +114,9 @@ def call_periodontitis_model(image_path, timeout_seconds=240):
     # Expected HF return format:
     # (combined_image_path, measurements_list, summary_text)
     # =====================================================
-    if not isinstance(result, tuple) or len(result) != 3:
+    print("🔍 HF RAW RESULT:", result, type(result))
+
+    if not isinstance(result, list) or len(result) != 3:
         raise ValueError("Unexpected model output format from HF space")
 
     combined_image_path = result[0]
@@ -200,5 +202,6 @@ def predict_periodontitis():
         return jsonify({"error": str(e)}), 500
     finally:
         os.remove(temp_path)
+
 
 
