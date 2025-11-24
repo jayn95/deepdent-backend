@@ -15,13 +15,13 @@ PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 def call_gingivitis_model(image_path, timeout_seconds=240):
     """
     Calls the Hugging Face gingivitis Space.
-    Expects the Space to return Base64 images + diagnosis text directly.
+    Ensures images are returned as Base64 strings for client display.
     """
     client = Client(GINGIVITIS_SPACE)
     result_container = {}
 
     def run_predict():
-        # Hugging Face expects a file-like input
+        # Send file to HF Space predict endpoint
         result_container["data"] = client.predict(
             handle_file(image_path),
             0.4,
@@ -29,7 +29,6 @@ def call_gingivitis_model(image_path, timeout_seconds=240):
             api_name="/predict"
         )
 
-    import threading
     thread = threading.Thread(target=run_predict)
     thread.start()
     thread.join(timeout=timeout_seconds)
@@ -43,10 +42,41 @@ def call_gingivitis_model(image_path, timeout_seconds=240):
     if len(result) != 4:
         raise ValueError(f"Unexpected result from gingivitis model: {result}")
 
-    # Map to labels
     labels = ["swelling", "redness", "bleeding"]
-    images = dict(zip(labels, result[:3]))
-    diagnosis = result[3]
+    images = {}
+
+    for label, item in zip(labels, result[:3]):
+        # If item is already a Base64 string, use it
+        if isinstance(item, str):
+            if os.path.exists(item):
+                # Convert server path to Base64
+                with open(item, "rb") as f:
+                    images[label] = base64.b64encode(f.read()).decode("utf-8")
+            else:
+                # Assume it is already Base64
+                images[label] = item
+        else:
+            # If item is a PIL/numpy image, convert to Base64
+            try:
+                import io
+                from PIL import Image
+                if hasattr(item, "save"):
+                    buf = io.BytesIO()
+                    item.save(buf, format="JPEG")
+                    images[label] = base64.b64encode(buf.getvalue()).decode("utf-8")
+                else:
+                    # For numpy arrays
+                    from PIL import Image
+                    import numpy as np
+                    pil_img = Image.fromarray(item)
+                    buf = io.BytesIO()
+                    pil_img.save(buf, format="JPEG")
+                    images[label] = base64.b64encode(buf.getvalue()).decode("utf-8")
+            except Exception as e:
+                print(f"Error converting {label} to Base64: {e}")
+                images[label] = None
+
+    diagnosis = result[3]  # The diagnosis text
 
     return {"images": images, "diagnosis": diagnosis}
 
@@ -161,3 +191,4 @@ def predict_periodontitis():
         return jsonify({"error": str(e)}), 500
     finally:
         os.remove(temp_path)
+
