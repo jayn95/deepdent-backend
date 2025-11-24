@@ -6,9 +6,12 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-GINGIVITIS_SPACE = "jayn95/deepdent_gingivitis"
-PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
+# NEW — Separate Spaces
+SWELLING_SPACE = "jayn95/deepdent_swelling"
+REDNESS_SPACE = "jayn95/deepdent_redness"
+BLEEDING_SPACE = "jayn95/deepdent_bleeding"
 
+PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 
 def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout_seconds=240):
     """
@@ -131,6 +134,49 @@ def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout
     else:
         return encoded_results
 
+def call_single_model(space_name, image_path):
+    """
+    Calls a Hugging Face Space that returns ONLY:
+    [image, diagnosis_text]
+    """
+    client = Client(space_name)
+
+    result = client.predict(
+        handle_file(image_path),
+        0.4,
+        0.5,
+        api_name="/predict"
+    )
+
+    # Unpack results
+    image_item = result[0]
+    diagnosis_text = result[1]
+
+    # Convert to base64
+    encoded = None
+
+    try:
+        # Case A: path to temp file
+        if isinstance(image_item, str) and os.path.exists(image_item):
+            with open(image_item, "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("utf-8")
+
+        # Case B: numpy array
+        else:
+            import numpy as np
+            if isinstance(image_item, np.ndarray):
+                from PIL import Image
+                import io
+                pil_img = Image.fromarray(image_item)
+                buf = io.BytesIO()
+                pil_img.save(buf, format="JPEG")
+                encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    except Exception as e:
+        print("Error encoding image:", e)
+
+    return encoded, diagnosis_text
+
 
 @app.route("/")
 def home():
@@ -148,26 +194,28 @@ def predict_gingivitis():
             image.save(temp_file.name)
             temp_path = temp_file.name
 
-        encoded_results = call_huggingface(
-            GINGIVITIS_SPACE,
-            temp_path,
-            labels=["swelling", "redness", "bleeding", "diagnosis"]
-        )
+        # Call the 3 individual Spaces
+        swell_img, swell_diag = call_single_model(SWELLING_SPACE, temp_path)
+        red_img, red_diag = call_single_model(REDNESS_SPACE, temp_path)
+        bleed_img, bleed_diag = call_single_model(BLEEDING_SPACE, temp_path)
 
         os.remove(temp_path)
-        
-        print(f"Gingivitis results count: {len(encoded_results)}")
-        
+
         return jsonify({
-            "images": encoded_results["images"],
-            "diagnosis": encoded_results.get("analysis") or "No diagnosis returned"
+            "images": {
+                "swelling": swell_img,
+                "redness": red_img,
+                "bleeding": bleed_img
+            },
+            "diagnosis": {
+                "swelling": swell_diag,
+                "redness": red_diag,
+                "bleeding": bleed_diag
+            }
         })
 
-    except TimeoutError as te:
-        return jsonify({"error": str(te)}), 504
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
 
 @app.route("/predict/periodontitis", methods=["POST"])
 def predict_periodontitis():
@@ -234,6 +282,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
