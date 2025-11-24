@@ -6,7 +6,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-GINGIVITIS_SPACE = "jayn95/deepdent_gingivitis"
+GINGIVITIS_SPACE = "DeepdentTeam/deepdent_gingivitis"
 PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 
 
@@ -161,3 +161,4 @@ def predict_periodontitis():
         return jsonify({"error": str(e)}), 500
     finally:
         os.remove(temp_path)
+
