@@ -7,9 +7,9 @@ app = Flask(__name__)
 CORS(app)
 
 # NEW — Separate Spaces
-SWELLING_SPACE = "DeepdentTeam/Gingiviitis-Swelling"
-REDNESS_SPACE = "DeepdentTeam/Gingiviitis-Redness"
-BLEEDING_SPACE = "DeepdentTeam/Gingiviitis-Bleeding"
+SWELLING_SPACE = "DeepdentTeam/Gingivitis-Swelling"
+REDNESS_SPACE = "DeepdentTeam/Gingivitis-Redness"
+BLEEDING_SPACE = "DeepdentTeam/Gingivitis-Bleeding"
 
 PERIODONTITIS_SPACE = "DeepdentTeam/deepdent_periodontitis"
 
@@ -282,6 +282,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
