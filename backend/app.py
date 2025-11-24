@@ -10,7 +10,7 @@ GINGIVITIS_SPACE = "jayn95/deepdent_gingivitis"
 PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 
 
-def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout_seconds=120):
+def call_huggingface(space_name, image_path, labels=None, flatten=False, timeout_seconds=240):
     """
     Calls the specified Hugging Face Space API to run a prediction with a timeout.
     Processes the result to separate analysis text from image file paths and
@@ -234,6 +234,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
