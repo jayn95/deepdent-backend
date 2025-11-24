@@ -17,7 +17,6 @@ import io
 from PIL import Image
 import numpy as np
 
-```
 client = Client(GINGIVITIS_SPACE)
 result_container = {}
 
@@ -69,7 +68,6 @@ for label, item in zip(labels, result[:3]):
 
 diagnosis = result[3]
 return {"images": images, "diagnosis": diagnosis}
-```
 
 def call_periodontitis_model(image_path, timeout_seconds=240):
 """ Calls the Hugging Face periodontitis Space and returns Base64 annotated image and analysis """
@@ -78,7 +76,6 @@ from PIL import Image
 import numpy as np
 import cv2
 
-```
 client = Client(PERIODONTITIS_SPACE)
 result_container = {}
 
@@ -109,7 +106,6 @@ else:
     raise TypeError(f"Unexpected image type: {type(combined_img)}")
 
 return {"annotated_image": img_b64, "analysis": summary_text}
-```
 
 # ----------------- Routes -----------------
 
@@ -123,7 +119,6 @@ image = request.files.get("image")
 if not image:
 return jsonify({"error": "No image provided"}), 400
 
-```
 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
     image.save(temp_file.name)
     temp_path = temp_file.name
@@ -140,7 +135,6 @@ except Exception as e:
     return jsonify({"error": str(e)}), 500
 finally:
     os.remove(temp_path)
-```
 
 @app.route("/predict/periodontitis", methods=["POST"])
 def predict_periodontitis():
@@ -148,7 +142,6 @@ image = request.files.get("image")
 if not image:
 return jsonify({"error": "No image provided"}), 400
 
-```
 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
     image.save(temp_file.name)
     temp_path = temp_file.name
@@ -162,36 +155,32 @@ except Exception as e:
     return jsonify({"error": str(e)}), 500
 finally:
     os.remove(temp_path)
-```
 
 # Optional debug routes
 
 @app.route("/debug/gingivitis", methods=["POST"])
 def debug_gingivitis():
-image = request.files.get("image")
-with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
-image.save(temp_file.name)
-temp_path = temp_file.name
+    image = request.files.get("image")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+        image.save(temp_file.name)
+        temp_path = temp_file.name
 
-```
-client = Client(GINGIVITIS_SPACE)
-result = client.predict(handle_file(temp_path), 0.4, 0.5, api_name="/predict")
-return jsonify({"raw": str(result)})
-```
+    client = Client(GINGIVITIS_SPACE)
+    result = client.predict(handle_file(temp_path), 0.4, 0.5, api_name="/predict")
+    return jsonify({"raw": str(result)})
 
 @app.route("/debug/periodontitis", methods=["POST"])
 def debug_periodontitis():
-image = request.files.get("image")
-with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
-image.save(temp_file.name)
-temp_path = temp_file.name
+    image = request.files.get("image")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
+        image.save(temp_file.name)
+        temp_path = temp_file.name
 
-```
-client = Client(PERIODONTITIS_SPACE)
-result = client.predict(handle_file(temp_path), api_name="/predict")
-return jsonify({"raw": str(result)})
-```
+    client = Client(PERIODONTITIS_SPACE)
+    result = client.predict(handle_file(temp_path), api_name="/predict")
+    return jsonify({"raw": str(result)})
 
-if **name** == "**main**":
-port = int(os.environ.get("PORT", 5000))
-app.run(host="0.0.0.0", port=port, debug=True)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
+
