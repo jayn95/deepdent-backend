@@ -91,13 +91,21 @@ def call_periodontitis_model(image_path, timeout_seconds=240):
 
     combined_img, summary_text = data
 
-    if hasattr(combined_img, "save"):
+    # Convert image to Base64
+    if hasattr(combined_img, "save"):  # PIL.Image
         buf = io.BytesIO()
         combined_img.save(buf, format="JPEG")
         img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
     elif isinstance(combined_img, np.ndarray):
         _, buf = cv2.imencode(".jpg", cv2.cvtColor(combined_img, cv2.COLOR_RGB2BGR))
         img_b64 = base64.b64encode(buf).decode("utf-8")
+    elif isinstance(combined_img, str):
+        if os.path.exists(combined_img):
+            with open(combined_img, "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode("utf-8")
+        else:
+            # assume it is already Base64
+            img_b64 = combined_img
     else:
         raise TypeError(f"Unexpected image type: {type(combined_img)}")
 
@@ -185,3 +193,4 @@ def debug_periodontitis():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
+
