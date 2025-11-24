@@ -119,9 +119,11 @@ def call_periodontitis_model(image_path, timeout_seconds=240):
     except Exception as e:
         raise RuntimeError(f"Failed to encode image: {e}")
 
+    # ✅ Return completed dict
     return {
         "annotated_image": img_b64,
-        "analys
+        "analysis": summary_text
+    }
 
 # --- Routes ---
 
@@ -174,3 +176,4 @@ def predict_periodontitis():
         return jsonify({"error": str(e)}), 500
     finally:
         os.remove(temp_path)
+
