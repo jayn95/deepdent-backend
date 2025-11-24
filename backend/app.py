@@ -15,21 +15,21 @@ PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 def call_gingivitis_model(image_path, timeout_seconds=240):
     """
     Calls the Hugging Face gingivitis Space.
-    Expects the Space to return Base64 images + diagnosis text directly.
+    Expects the Space to return Base64-encoded images + diagnosis text.
     """
     client = Client(GINGIVITIS_SPACE)
     result_container = {}
 
     def run_predict():
-        # Hugging Face expects a file-like input
+        # Send image to Gradio Space
         result_container["data"] = client.predict(
             handle_file(image_path),
-            0.4,
-            0.5,
+            0.5,  # Confidence
+            0.5,  # NMS IoU
             api_name="/predict"
         )
 
-    import threading
+    # Run with timeout
     thread = threading.Thread(target=run_predict)
     thread.start()
     thread.join(timeout=timeout_seconds)
@@ -39,11 +39,11 @@ def call_gingivitis_model(image_path, timeout_seconds=240):
 
     result = result_container.get("data", [])
 
-    # Ensure we have 4 items: swelling, redness, bleeding, diagnosis
+    # Ensure result has exactly 4 items
     if len(result) != 4:
         raise ValueError(f"Unexpected result from gingivitis model: {result}")
 
-    # Map to labels
+    # Map first three items to labels
     labels = ["swelling", "redness", "bleeding"]
     images = dict(zip(labels, result[:3]))
     diagnosis = result[3]
@@ -128,7 +128,7 @@ def predict_gingivitis():
     try:
         response = call_gingivitis_model(temp_path)
         return jsonify({
-            "images": response["images"],       # Base64 images
+            "images": response["images"],       # Base64 strings
             "diagnosis": response.get("diagnosis") or "No diagnosis returned"
         })
     except TimeoutError as te:
@@ -161,5 +161,6 @@ def predict_periodontitis():
         return jsonify({"error": str(e)}), 500
     finally:
         os.remove(temp_path)
+
 
 
