@@ -145,7 +145,7 @@ def call_single_model(space_name, image_path):
         handle_file(image_path),
         0.4,
         0.5,
-        api_name="/predict"
+        api_name="/detect"
     )
 
     # Unpack results
@@ -183,7 +183,7 @@ def home():
     return jsonify({"status": "DeepDent backend running successfully!"})
 
 
-@app.route("/predict/gingivitis", methods=["POST"])
+@app.route("/detect/gingivitis", methods=["POST"])
 def predict_gingivitis():
     try:
         image = request.files.get("image")
@@ -282,6 +282,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
