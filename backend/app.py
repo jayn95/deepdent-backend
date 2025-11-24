@@ -294,7 +294,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-GINGIVITIS_SPACE = "DeepdentTeam/deepdent_gingivitis"
+GINGIVITIS_SPACE = "jayn95/deepdent_gingivitis"
 PERIODONTITIS_SPACE = "jayn95/deepdent_periodontitis"
 
 
@@ -522,6 +522,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
 
     app.run(host="0.0.0.0", port=port)
+
 
 
 
