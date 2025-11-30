@@ -122,26 +122,53 @@ def home():
 @app.route("/predict/gingivitis", methods=["POST"])
 def predict_gingivitis():
     image = request.files.get("image")
-    if not image:
-        return jsonify({"error": "No image provided"}), 400
 
+    # ----------------------------
+    # Stage 1: Check if image uploaded
+    # ----------------------------
+    if not image:
+        return jsonify({
+            "upload_status": "failed",
+            "error": "No image provided"
+        }), 400
+
+    # If image exists, upload was successful
+    upload_status = "success"
+
+    # Save temporary file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_file:
         image.save(temp_file.name)
         temp_path = temp_file.name
 
     try:
+        # ----------------------------
+        # Stage 2: Call HuggingFace
+        # ----------------------------
         response = call_gingivitis_model(temp_path)
+
         return jsonify({
+            "upload_status": upload_status,
+            "model_status": "success",
             "images": response["images"],
             "diagnosis": response.get("diagnosis") or "No diagnosis returned"
         })
+
     except TimeoutError as te:
-        return jsonify({"error": str(te)}), 504
+        return jsonify({
+            "upload_status": upload_status,
+            "model_status": "timeout",
+            "error": str(te)
+        }), 504
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "upload_status": upload_status,
+            "model_status": "error",
+            "error": str(e)
+        }), 500
+
     finally:
         os.remove(temp_path)
-
 
 @app.route("/predict/periodontitis", methods=["POST"])
 def predict_periodontitis():
@@ -193,4 +220,5 @@ def debug_periodontitis():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
+
 
